@@ -1,0 +1,50 @@
+---
+name: Test
+
+on: [push]
+
+jobs:
+ build:
+   runs-on: ubuntu-latest
+  
+   steps:
+   # This action checks out the code from the repository
+   - name: Checkout Code
+     uses: actions/checkout@v2
+
+
+      # This action sets up the JFrog CLI with the Artifactory URL and access token     
+   - uses: jfrog/setup-jfrog-cli@v3
+     env:
+       JF_URL: ${{ vars.OCTAURA_JFROG_URL }}
+       JF_ACCESS_TOKEN: ${{ secrets.OCTAURA_NPM_RELEASE_LOCAL_READONLY_SERVICE_USER_JFROG_ACCESS_TOKEN }}
+
+   # This command adds a new server configuration to the JFrog CLI   
+   - run: |
+       export SERVER_ID="test"
+       jf c add $SERVER_ID --url=${{ vars.OCTAURA_JFROG_URL }} --access-token=${{ secrets.OCTAURA_NPM_RELEASE_LOCAL_READONLY_SERVICE_USER_JFROG_ACCESS_TOKEN }} --interactive=false
+
+   - run: |
+       jf rt dl "azure-nuget-cache/antlr.3.4.1.9004.nupkg" 
+       jf rt upload antlr.3.4.1.9004.nupkg test-nuget-local --fail-no-op --server-id="test" --build-name="NugetTest" --build-number="1"
+       jf rt build-publish "NugetTest" "1"
+   
+   - run: |
+       BUILDDATE=$(date -u -Idate)
+       echo "BUILDDATE=$BUILDDATE"
+       BUILDTIMESTAMP=$(date -u -Iseconds)
+       echo "BUILDTIMESTAMP=$BUILDTIMESTAMP"
+       PULL_REQUEST_HEAD_SHA=${{ github.event.pull_request.head.sha }}
+       GH_SHA="${PULL_REQUEST_HEAD_SHA:-${GITHUB_SHA:-ERROR}}"
+       echo "GH_SHA=$GH_SHA"
+       BODY=$(jq --null-input \
+         --arg buildDate "$BUILDDATE" \
+         --arg buildTimestamp "$BUILDTIMESTAMP" \
+         --arg gitHash "$GH_SHA" \
+         --arg informationalVersion "$INFORMATIONALVERSION" \
+         --arg version "$VERSION" \
+         '{"buildDate": $buildDate, "buildTimestamp": $buildTimestamp, "gitHash": $gitHash, "informationalVersion": $informationalVersion, "version": $version}' \
+         )
+       mkdir -p "${PUBLISHARTIFACTDIRECTORY}_version"
+       echo "$BODY" > "${PUBLISHARTIFACTDIRECTORY}version.json"
+       cat "${PUBLISHARTIFACTDIRECTORY}version.json"
